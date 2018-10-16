@@ -109,11 +109,11 @@ func (ws *WebsocketConnection) PingParams() (time.Duration, time.Duration) {
 
 // WebsocketTransport implements websocket transport
 type WebsocketTransport struct {
-	PingInterval    time.Duration
-	PingTimeout     time.Duration
-	ReceiveTimeout  time.Duration
-	SendTimeout     time.Duration
-	
+	PingInterval   time.Duration
+	PingTimeout    time.Duration
+	ReceiveTimeout time.Duration
+	SendTimeout    time.Duration
+
 	BufferSize      int
 	Headers         http.Header
 	TLSClientConfig *tls.Config
