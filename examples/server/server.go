@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/vanti-dev/golang-socketio/transport"
+	"go.uber.org/zap"
 	"log"
 	"net/http"
 	"os"
@@ -68,9 +69,11 @@ func onLeaveHandler(c *socketio.Channel, roomName string) string {
 }
 
 func main() {
+	logger, _ := zap.NewDevelopment()
+
 	currentRoot, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal("", zap.Error(err))
 	}
 
 	d := filepath.Join(currentRoot, "..", "assets")
@@ -80,36 +83,37 @@ func main() {
 
 	assetsDir = http.Dir(d)
 
-	log.Println("assetsDir:", assetsDir)
+	logger.Debug("", zap.Any("assetsDir", assetsDir))
 
 	server := socketio.NewServer(
 		transport.NewWebsocketTransport(transport.WebsocketTransportParams{}, func(r *http.Request) bool {
 			return true
-		}),
-		transport.DefaultPollingTransport())
+		}, logger),
+		transport.NewPollingTransport(logger),
+		logger)
 	if err := server.On(socketio.OnConnection, onConnectionHandler); err != nil {
-		log.Fatal(err)
+		logger.Fatal("", zap.Error(err))
 	}
 	if err := server.On(socketio.OnDisconnection, onDisconnectionHandler); err != nil {
-		log.Fatal(err)
+		logger.Fatal("", zap.Error(err))
 	}
 	if err := server.On(eventJoin, onJoinHandler); err != nil {
-		log.Fatal(err)
+		logger.Fatal("", zap.Error(err))
 	}
 	if err := server.On(eventSend, onSendHandler); err != nil {
-		log.Fatal(err)
+		logger.Fatal("", zap.Error(err))
 	}
 	if err := server.On(eventLeave, onLeaveHandler); err != nil {
-		log.Fatal(err)
+		logger.Fatal("", zap.Error(err))
 	}
 
 	serveMux := http.NewServeMux()
 	serveMux.Handle("/socket.io/", server)
 	serveMux.HandleFunc("/", assetsFileHandler)
 
-	log.Println("Starting server...")
+	logger.Info("Starting server...")
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), serveMux); err != nil {
-		log.Panic(err)
+		logger.Panic("", zap.Error(err))
 	}
 }
 

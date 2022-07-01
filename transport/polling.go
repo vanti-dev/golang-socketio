@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"fmt"
-	"github.com/vanti-dev/golang-socketio/logging"
 	"github.com/vanti-dev/golang-socketio/protocol"
 )
 
@@ -54,12 +53,13 @@ type PollingTransportParams struct {
 // sessions describes sessions needed for identifying polling connections with socket.io connections
 type sessions struct {
 	sync.Mutex
-	m map[string]*PollingConnection
+	m      map[string]*PollingConnection
+	logger *zap.Logger
 }
 
 // Set sets sessionID to the given connection
 func (s *sessions) Set(sessionID string, conn *PollingConnection) {
-	logging.Log().Debug("sessions.Set() fired with:", zap.String("sessionId", sessionID))
+	s.logger.Debug("sessions.Set() fired with:", zap.String("sessionId", sessionID))
 	s.Lock()
 	defer s.Unlock()
 	s.m[sessionID] = conn
@@ -67,7 +67,7 @@ func (s *sessions) Set(sessionID string, conn *PollingConnection) {
 
 // Delete the sessionID
 func (s *sessions) Delete(sessionID string) {
-	logging.Log().Debug("sessions.Delete() fired with:", zap.String("sessionId", sessionID))
+	s.logger.Debug("sessions.Delete() fired with:", zap.String("sessionId", sessionID))
 	s.Lock()
 	defer s.Unlock()
 	delete(s.m, sessionID)
@@ -89,21 +89,32 @@ type PollingTransport struct {
 
 	Headers  http.Header
 	sessions sessions
+
+	logger *zap.Logger
 }
 
 // DefaultPollingTransport returns PollingTransport with default params
 func DefaultPollingTransport() *PollingTransport {
+	l, _ := zap.NewProduction()
 	return &PollingTransport{
 		PingInterval:   PlDefaultPingInterval,
 		PingTimeout:    PlDefaultPingTimeout,
 		ReceiveTimeout: PlDefaultReceiveTimeout,
 		SendTimeout:    PlDefaultSendTimeout,
 		sessions: sessions{
-			Mutex: sync.Mutex{},
-			m:     map[string]*PollingConnection{},
+			Mutex:  sync.Mutex{},
+			m:      map[string]*PollingConnection{},
+			logger: l,
 		},
 		Headers: nil,
+		logger:  l,
 	}
+}
+
+func NewPollingTransport(logger *zap.Logger) *PollingTransport {
+	t := DefaultPollingTransport()
+	t.logger = logger
+	return t
 }
 
 // Connect for the polling transport is a placeholder
@@ -137,28 +148,28 @@ func (t *PollingTransport) Serve(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		logging.Log().Debug("PollingTransport.Serve() is serving GET request")
+		t.logger.Debug("PollingTransport.Serve() is serving GET request")
 		conn.PollingWriter(w, r)
 	case http.MethodPost:
 		bodyBytes, err := ioutil.ReadAll(r.Body)
 		r.Body.Close()
 		if err != nil {
-			logging.Log().Warn("PollingTransport.Serve() error ioutil.ReadAll():", zap.Error(err))
+			t.logger.Warn("PollingTransport.Serve() error ioutil.ReadAll():", zap.Error(err))
 			return
 		}
 
 		bodyString := string(bodyBytes)
-		logging.Log().Debug("PollingTransport.Serve() POST bodyString before split:", zap.String("bodyString", bodyString))
+		t.logger.Debug("PollingTransport.Serve() POST bodyString before split:", zap.String("bodyString", bodyString))
 		index := strings.Index(bodyString, ":")
 		body := bodyString[index+1:]
 
 		setHeaders(w)
 
-		logging.Log().Debug("PollingTransport.Serve() POST body:", zap.String("body", body))
+		t.logger.Debug("PollingTransport.Serve() POST body:", zap.String("body", body))
 		w.Write([]byte("ok"))
-		logging.Log().Debug("PollingTransport.Serve() written POST response")
+		t.logger.Debug("PollingTransport.Serve() written POST response")
 		conn.eventsInC <- body
-		logging.Log().Debug("PollingTransport.Serve() sent to eventsInC")
+		t.logger.Debug("PollingTransport.Serve() sent to eventsInC")
 	}
 }
 
@@ -175,12 +186,12 @@ type PollingConnection struct {
 func (polling *PollingConnection) GetMessage() (string, error) {
 	select {
 	case <-time.After(polling.Transport.ReceiveTimeout):
-		logging.Log().Debug("PollingConnection.GetMessage() timed out")
+		polling.Transport.logger.Debug("PollingConnection.GetMessage() timed out")
 		return "", errGetMessageTimeout
 	case m := <-polling.eventsInC:
-		logging.Log().Debug("PollingConnection.GetMessage() received:", zap.String("m", m))
+		polling.Transport.logger.Debug("PollingConnection.GetMessage() received:", zap.String("m", m))
 		if m == protocol.MessageClose {
-			logging.Log().Debug("PollingConnection.GetMessage() received connection close")
+			polling.Transport.logger.Debug("PollingConnection.GetMessage() received connection close")
 			return "", errReceivedConnectionClose
 		}
 		return m, nil
@@ -189,15 +200,15 @@ func (polling *PollingConnection) GetMessage() (string, error) {
 
 // WriteMessage to the connection
 func (polling *PollingConnection) WriteMessage(message string) error {
-	logging.Log().Debug("PollingConnection.WriteMessage() fired with:", zap.String("message", message))
+	polling.Transport.logger.Debug("PollingConnection.WriteMessage() fired with:", zap.String("message", message))
 	polling.eventsOutC <- message
-	logging.Log().Debug("PollingConnection.WriteMessage() written to eventsOutC:", zap.String("message", message))
+	polling.Transport.logger.Debug("PollingConnection.WriteMessage() written to eventsOutC:", zap.String("message", message))
 	select {
 	case <-time.After(polling.Transport.SendTimeout):
 		return errWriteMessageTimeout
 	case errString := <-polling.errors:
 		if errString != noError {
-			logging.Log().Debug("PollingConnection.WriteMessage() failed to write with err:", zap.String("errString", errString))
+			polling.Transport.logger.Debug("PollingConnection.WriteMessage() failed to write with err:", zap.String("errString", errString))
 			return errors.New(errString)
 		}
 	}
@@ -206,7 +217,7 @@ func (polling *PollingConnection) WriteMessage(message string) error {
 
 // Close the polling connection and delete session
 func (polling *PollingConnection) Close() error {
-	logging.Log().Debug("PollingConnection.Close() fired for session:", zap.String("sessionId", polling.sessionID))
+	polling.Transport.logger.Debug("PollingConnection.Close() fired for session:", zap.String("sessionId", polling.sessionID))
 	err := polling.WriteMessage(protocol.MessageBlank)
 	polling.Transport.sessions.Delete(polling.sessionID)
 	return err
@@ -222,13 +233,13 @@ func (polling *PollingConnection) PollingWriter(w http.ResponseWriter, r *http.R
 	setHeaders(w)
 	select {
 	case <-time.After(polling.Transport.SendTimeout):
-		logging.Log().Debug("PollingTransport.PollingWriter() timed out")
+		polling.Transport.logger.Debug("PollingTransport.PollingWriter() timed out")
 		polling.errors <- noError
 	case message := <-polling.eventsOutC:
-		logging.Log().Debug("PollingTransport.PollingWriter() prepares to write message:", zap.String("message", message))
+		polling.Transport.logger.Debug("PollingTransport.PollingWriter() prepares to write message:", zap.String("message", message))
 		message = withLength(message)
 		if message == withLength(protocol.MessageBlank) {
-			logging.Log().Debug("PollingTransport.PollingWriter() writing 1:6")
+			polling.Transport.logger.Debug("PollingTransport.PollingWriter() writing 1:6")
 
 			hj, ok := w.(http.Hijacker)
 			if !ok {
@@ -250,14 +261,14 @@ func (polling *PollingConnection) PollingWriter(w http.ResponseWriter, r *http.R
 				"Date: Mon, 24 Nov 2016 10:21:21 GMT\r\n\r\n")
 			buffer.WriteString(withLength(protocol.MessageBlank))
 			buffer.Flush()
-			logging.Log().Debug("PollingTransport.PollingWriter() hijack returns")
+			polling.Transport.logger.Debug("PollingTransport.PollingWriter() hijack returns")
 			polling.errors <- noError
 			polling.eventsInC <- StopMessage
 		} else {
 			_, err := w.Write([]byte(message))
-			logging.Log().Debug("PollingTransport.PollingWriter() written message:", zap.String("message", message))
+			polling.Transport.logger.Debug("PollingTransport.PollingWriter() written message:", zap.String("message", message))
 			if err != nil {
-				logging.Log().Warn("PollingTransport.PollingWriter() failed to write message with err:", zap.Error(err))
+				polling.Transport.logger.Warn("PollingTransport.PollingWriter() failed to write message with err:", zap.Error(err))
 				polling.errors <- err.Error()
 				return
 			}

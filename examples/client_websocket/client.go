@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"github.com/vanti-dev/golang-socketio"
+	"go.uber.org/zap"
 	"log"
 	"time"
 
@@ -49,9 +50,12 @@ func onSomeEventHandler(c *socketio.Channel, data interface{}) {
 }
 
 func main() {
+	logger, _ := zap.NewProduction()
+
 	client, err := socketio.Dial(
 		socketio.AddrWebsocket("localhost", serverPort, false),
 		transport.DefaultWebsocketTransport(),
+		logger,
 	)
 	if err != nil {
 		log.Fatal(err)

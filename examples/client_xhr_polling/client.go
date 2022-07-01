@@ -2,12 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/vanti-dev/golang-socketio/transport"
+	"go.uber.org/zap"
 	"log"
 	"time"
 
 	"github.com/vanti-dev/golang-socketio"
 	"github.com/vanti-dev/golang-socketio/examples/model"
-	"github.com/vanti-dev/golang-socketio/transport"
 )
 
 const (
@@ -49,9 +50,12 @@ func onSomeEventHandler(c *socketio.Channel, data interface{}) {
 }
 
 func main() {
+	logger, _ := zap.NewProduction()
+
 	client, err := socketio.Dial(
 		socketio.AddrPolling("localhost", serverPort, false),
 		transport.DefaultPollingClientTransport(),
+		logger,
 	)
 	if err != nil {
 		log.Fatal(err)

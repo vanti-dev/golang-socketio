@@ -1,6 +1,7 @@
 package socketio
 
 import (
+	"go.uber.org/zap"
 	"strconv"
 
 	_ "time"
@@ -45,8 +46,13 @@ func AddrPolling(host string, port int, secure bool) string {
 // Dial connects to server and initializes socket.io protocol
 // The correct ws protocol addr example:
 // ws://myserver.com/socket.io/?EIO=3&transport=websocket
-func Dial(addr string, tr transport.Transport) (*Client, error) {
-	c := &Client{Channel: &Channel{}, event: &event{}}
+func Dial(addr string, tr transport.Transport, logger *zap.Logger) (*Client, error) {
+	c := &Client{
+		Channel: &Channel{},
+		event: &event{
+			logger: logger,
+		},
+	}
 	c.Channel.init()
 	c.event.init()
 

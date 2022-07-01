@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/vanti-dev/golang-socketio/logging"
 )
 
 const (
@@ -48,25 +47,29 @@ type WebsocketTransport struct {
 	TLSClientConfig *tls.Config
 
 	CheckOriginHandler func(r *http.Request) bool
+	logger             *zap.Logger
 }
 
 // DefaultWebsocketTransport returns websocket connection with default params
 func DefaultWebsocketTransport() *WebsocketTransport {
+	l, _ := zap.NewProduction()
 	return &WebsocketTransport{
 		PingInterval:   wsDefaultPingInterval,
 		PingTimeout:    wsDefaultPingTimeout,
 		ReceiveTimeout: wsDefaultReceiveTimeout,
 		SendTimeout:    wsDefaultSendTimeout,
 		BufferSize:     wsDefaultBufferSize,
+		logger:         l,
 	}
 }
 
 // NewWebsocketTransport returns websocket transport with given params
-func NewWebsocketTransport(params WebsocketTransportParams, originHandler func(r *http.Request) bool) *WebsocketTransport {
+func NewWebsocketTransport(params WebsocketTransportParams, originHandler func(r *http.Request) bool, logger *zap.Logger) *WebsocketTransport {
 	tr := DefaultWebsocketTransport()
 	tr.Headers = params.Headers
 	tr.TLSClientConfig = params.TLSClientConfig
 	tr.CheckOriginHandler = originHandler
+	tr.logger = logger
 	return tr
 }
 
@@ -82,7 +85,7 @@ func (t *WebsocketTransport) Connect(url string) (Connection, error) {
 
 // HandleConnection
 func (t *WebsocketTransport) HandleConnection(w http.ResponseWriter, r *http.Request) (Connection, error) {
-	logging.Log().Debug("HandleConnection", zap.Any("r.Method", r.Method))
+	t.logger.Debug("HandleConnection", zap.Any("r.Method", r.Method))
 	if r.Method != http.MethodGet {
 		http.Error(w, upgradeFailed+errMethodNotAllowed.Error(), http.StatusServiceUnavailable)
 		return nil, errMethodNotAllowed
@@ -98,7 +101,7 @@ func (t *WebsocketTransport) HandleConnection(w http.ResponseWriter, r *http.Req
 
 	socket, err := u.Upgrade(w, r, nil)
 	if err != nil {
-		logging.Log().Warn("couldn't upgrade", zap.Error(err))
+		t.logger.Warn("couldn't upgrade", zap.Error(err))
 		http.Error(w, upgradeFailed+err.Error(), http.StatusServiceUnavailable)
 		return nil, errHttpUpgradeFailed
 	}
@@ -120,33 +123,33 @@ type WebsocketConnection struct {
 
 // GetMessage from the connection
 func (ws *WebsocketConnection) GetMessage() (string, error) {
-	logging.Log().Debug("WebsocketConnection.GetMessage() fired")
+	ws.transport.logger.Debug("WebsocketConnection.GetMessage() fired")
 	ws.socket.SetReadDeadline(time.Now().Add(ws.transport.ReceiveTimeout))
 
 	msgType, reader, err := ws.socket.NextReader()
 	if err != nil {
-		logging.Log().Debug("WebsocketConnection.GetMessage() ws.socket.NextReader() err:", zap.Error(err))
+		ws.transport.logger.Debug("WebsocketConnection.GetMessage() ws.socket.NextReader() err:", zap.Error(err))
 		return "", err
 	}
 
 	// supports only text messages exchange
 	if msgType != websocket.TextMessage {
-		logging.Log().Debug("WebsocketConnection.GetMessage() returns errBinaryMessage")
+		ws.transport.logger.Debug("WebsocketConnection.GetMessage() returns errBinaryMessage")
 		return "", errBinaryMessage
 	}
 
 	data, err := ioutil.ReadAll(reader)
 	if err != nil {
-		logging.Log().Debug("WebsocketConnection.GetMessage() returns errBadBuffer")
+		ws.transport.logger.Debug("WebsocketConnection.GetMessage() returns errBadBuffer")
 		return "", errBadBuffer
 	}
 
 	text := string(data)
-	logging.Log().Debug("WebsocketConnection.GetMessage() text:", zap.String("text", text))
+	ws.transport.logger.Debug("WebsocketConnection.GetMessage() text:", zap.String("text", text))
 
 	// empty messages are not allowed
 	if len(text) == 0 {
-		logging.Log().Debug("WebsocketConnection.GetMessage() returns errPacketWrong")
+		ws.transport.logger.Debug("WebsocketConnection.GetMessage() returns errPacketWrong")
 		return "", errPacketWrong
 	}
 
@@ -155,7 +158,7 @@ func (ws *WebsocketConnection) GetMessage() (string, error) {
 
 // WriteMessage message m into a connection
 func (ws *WebsocketConnection) WriteMessage(m string) error {
-	logging.Log().Debug("WebsocketConnection.WriteMessage() fired with:", zap.String("m", m))
+	ws.transport.logger.Debug("WebsocketConnection.WriteMessage() fired with:", zap.String("m", m))
 	ws.socket.SetWriteDeadline(time.Now().Add(ws.transport.SendTimeout))
 
 	writer, err := ws.socket.NextWriter(websocket.TextMessage)
@@ -172,7 +175,7 @@ func (ws *WebsocketConnection) WriteMessage(m string) error {
 
 // Close the connection
 func (ws *WebsocketConnection) Close() error {
-	logging.Log().Debug("WebsocketConnection.Close() fired")
+	ws.transport.logger.Debug("WebsocketConnection.Close() fired")
 	return ws.socket.Close()
 }
 

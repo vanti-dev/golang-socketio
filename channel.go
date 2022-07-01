@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vanti-dev/golang-socketio/logging"
 	"github.com/vanti-dev/golang-socketio/protocol"
 	"github.com/vanti-dev/golang-socketio/transport"
 )
@@ -79,9 +78,9 @@ func (c *Channel) stub() error { return c.close(nil) }
 func (c *Channel) close(e *event) error {
 	switch c.conn.(type) {
 	case *transport.PollingConnection:
-		logging.Log().Debug("Channel.close() type: PollingConnection")
+		c.server.logger.Debug("Channel.close() type: PollingConnection")
 	case *transport.WebsocketConnection:
-		logging.Log().Debug("Channel.close() type: WebsocketConnection")
+		c.server.logger.Debug("Channel.close() type: WebsocketConnection")
 	}
 
 	c.aliveMu.Lock()
@@ -118,34 +117,34 @@ func (c *Channel) inLoop(e *event) error {
 	for {
 		message, err := c.conn.GetMessage()
 		if err != nil {
-			logging.Log().Debug(fmt.Sprintf("Channel.inLoop(), c.conn.GetMessage() err: %v, message: %s", err, message))
+			c.server.logger.Debug(fmt.Sprintf("Channel.inLoop(), c.conn.GetMessage() err: %v, message: %s", err, message))
 			return c.close(e)
 		}
 
 		if message == transport.StopMessage {
-			logging.Log().Debug("Channel.inLoop(): StopMessage")
+			c.server.logger.Debug("Channel.inLoop(): StopMessage")
 			return nil
 		}
 
 		decodedMessage, err := protocol.Decode(message)
 		if err != nil {
-			logging.Log().Debug(fmt.Sprintf("Channel.inLoop() decoding err: %v, message: %s", err, message))
+			c.server.logger.Debug(fmt.Sprintf("Channel.inLoop() decoding err: %v, message: %s", err, message))
 			c.close(e)
 			return err
 		}
 
 		switch decodedMessage.Type {
 		case protocol.MessageTypeOpen:
-			logging.Log().Debug(fmt.Sprintf("Channel.inLoop(), protocol.MessageTypeOpen, decodedMessage: %+v", decodedMessage))
+			c.server.logger.Debug(fmt.Sprintf("Channel.inLoop(), protocol.MessageTypeOpen, decodedMessage: %+v", decodedMessage))
 			if err := json.Unmarshal([]byte(decodedMessage.Source[1:]), &c.connHeader); err != nil {
 				c.close(e)
 			}
 			e.callHandler(c, OnConnection)
 
 		case protocol.MessageTypePing:
-			logging.Log().Debug(fmt.Sprintf("Channel.inLoop(), protocol.MessageTypePing, decodedMessage: %+v", decodedMessage))
+			c.server.logger.Debug(fmt.Sprintf("Channel.inLoop(), protocol.MessageTypePing, decodedMessage: %+v", decodedMessage))
 			if decodedMessage.Source == protocol.MessagePingProbe {
-				logging.Log().Debug(fmt.Sprintf("Channel.inLoop(), decodedMessage.Source: %s", decodedMessage.Source))
+				c.server.logger.Debug(fmt.Sprintf("Channel.inLoop(), decodedMessage.Source: %s", decodedMessage.Source))
 				c.outC <- protocol.MessagePongProbe
 				c.upgradedC <- transport.UpgradedMessage
 			} else {
@@ -167,10 +166,10 @@ func (c *Channel) inLoop(e *event) error {
 func (c *Channel) outLoop(e *event) error {
 	for {
 		outBufferLen := len(c.outC)
-		logging.Log().Debug("Channel.outLoop(), outBufferLen:", zap.Int("outBufferLen", outBufferLen))
+		c.server.logger.Debug("Channel.outLoop(), outBufferLen:", zap.Int("outBufferLen", outBufferLen))
 		switch {
 		case outBufferLen >= queueBufferSize-1:
-			logging.Log().Debug("Channel.outLoop(), outBufferLen >= queueBufferSize-1")
+			c.server.logger.Debug("Channel.outLoop(), outBufferLen >= queueBufferSize-1")
 			return c.close(e)
 		case outBufferLen > int(queueBufferSize/2):
 			overfloodedMu.Lock()
@@ -189,7 +188,7 @@ func (c *Channel) outLoop(e *event) error {
 		}
 
 		if err := c.conn.WriteMessage(m); err != nil {
-			logging.Log().Warn("Channel.outLoop(), failed to c.conn.WriteMessage() with err:", zap.Error(err))
+			c.server.logger.Warn("Channel.outLoop(), failed to c.conn.WriteMessage() with err:", zap.Error(err))
 			return c.close(e)
 		}
 	}
@@ -214,7 +213,7 @@ func (c *Channel) send(m *protocol.Message, payload interface{}) error {
 	// preventing encoding/json "index out of range" panic
 	defer func() {
 		if r := recover(); r != nil {
-			logging.Log().Warn("Channel.send(): recovered from panic:", zap.Any("r", r))
+			c.server.logger.Warn("Channel.send(): recovered from panic:", zap.Any("r", r))
 		}
 	}()
 

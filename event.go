@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/vanti-dev/golang-socketio/logging"
 	"github.com/vanti-dev/golang-socketio/protocol"
 )
 
@@ -27,6 +26,8 @@ type event struct {
 
 	onConnection    systemEventHandler
 	onDisconnection systemEventHandler
+
+	logger *zap.Logger
 }
 
 // init initializes events mapping
@@ -58,7 +59,7 @@ func (e *event) findHandler(name string) (*handler, bool) {
 // callHandler for the given channel c and event name
 func (e *event) callHandler(c *Channel, name string) {
 	if e.onConnection != nil && name == OnConnection {
-		logging.Log().Debug("event.callHandler(): OnConnection handler")
+		e.logger.Debug("event.callHandler(): OnConnection handler")
 		e.onConnection(c)
 	}
 
@@ -68,7 +69,7 @@ func (e *event) callHandler(c *Channel, name string) {
 
 	f, ok := e.findHandler(name)
 	if !ok {
-		logging.Log().Debug("event.callHandler(): handler not found")
+		e.logger.Debug("event.callHandler(): handler not found")
 		return
 	}
 
@@ -77,17 +78,17 @@ func (e *event) callHandler(c *Channel, name string) {
 
 // processIncoming checks incoming message m on channel c
 func (e *event) processIncoming(c *Channel, m *protocol.Message) {
-	logging.Log().Debug("event.processIncoming() fired with:", zap.Any("m", m))
+	e.logger.Debug("event.processIncoming() fired with:", zap.Any("m", m))
 	switch m.Type {
 	case protocol.MessageTypeEmit:
-		logging.Log().Debug("event.processIncoming() is finding handler for msg.Event:", zap.String("EventName", m.EventName))
+		e.logger.Debug("event.processIncoming() is finding handler for msg.Event:", zap.String("EventName", m.EventName))
 		f, ok := e.findHandler(m.EventName)
 		if !ok {
-			logging.Log().Debug("event.processIncoming(): handler not found")
+			e.logger.Debug("event.processIncoming(): handler not found")
 			return
 		}
 
-		logging.Log().Debug("event.processIncoming() found handler:", zap.Any("f", f))
+		e.logger.Debug("event.processIncoming() found handler:", zap.Any("f", f))
 
 		if !f.hasArgs {
 			f.call(c, &struct{}{})
@@ -95,10 +96,10 @@ func (e *event) processIncoming(c *Channel, m *protocol.Message) {
 		}
 
 		data := f.arguments()
-		logging.Log().Debug("event.processIncoming(), f.arguments() returned:", zap.Any("data", data))
+		e.logger.Debug("event.processIncoming(), f.arguments() returned:", zap.Any("data", data))
 
 		if err := json.Unmarshal([]byte(m.Args), &data); err != nil {
-			logging.Log().Info(fmt.Sprintf("event.processIncoming() failed to json.Unmaeshal(). msg.Args: %s, data: %v, err: %v",
+			e.logger.Info(fmt.Sprintf("event.processIncoming() failed to json.Unmaeshal(). msg.Args: %s, data: %v, err: %v",
 				m.Args, data, err))
 			return
 		}
@@ -106,7 +107,7 @@ func (e *event) processIncoming(c *Channel, m *protocol.Message) {
 		f.call(c, data)
 
 	case protocol.MessageTypeAckRequest:
-		logging.Log().Debug("event.processIncoming() ack request")
+		e.logger.Debug("event.processIncoming() ack request")
 		f, ok := e.findHandler(m.EventName)
 		if !ok || !f.out {
 			return
@@ -132,7 +133,7 @@ func (e *event) processIncoming(c *Channel, m *protocol.Message) {
 		c.send(ackResponse, result[0].Interface())
 
 	case protocol.MessageTypeAckResponse:
-		logging.Log().Debug("event.processIncoming() ack response")
+		e.logger.Debug("event.processIncoming() ack response")
 		ackC, err := c.ack.obtain(m.AckID)
 		if err == nil {
 			ackC <- m.Args
