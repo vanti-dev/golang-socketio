@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mtfelian/golang-socketio/logging"
-	"github.com/mtfelian/golang-socketio/protocol"
-	"github.com/mtfelian/golang-socketio/transport"
+	"github.com/vanti-dev/golang-socketio/logging"
+	"github.com/vanti-dev/golang-socketio/protocol"
+	"github.com/vanti-dev/golang-socketio/transport"
 )
 
 var (
