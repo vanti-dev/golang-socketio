@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"math/rand"
 	"net/http"
 	"sync"
@@ -208,7 +209,7 @@ func (s *Server) upgradeEventLoop(conn transport.Connection, remoteAddr string, 
 
 	pollingChannel, err := s.GetChannel(sid)
 	if err != nil {
-		logging.Log().Warn("Server.upgradeEventLoop() can't find channel for session:", sid)
+		logging.Log().Warn("Server.upgradeEventLoop() can't find channel for session:", zap.String("sid", sid))
 		return
 	}
 
@@ -262,7 +263,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			logging.Log().Debug("Server.ServeHTTP() is firing s.websocket.HandleConnection() for upgrade")
 			conn, err := s.websocket.HandleConnection(w, r)
 			if err != nil {
-				logging.Log().Debug("Server.ServeHTTP() upgrade error:", err)
+				logging.Log().Warn("Server.ServeHTTP() upgrade error:", zap.Error(err))
 				return
 			}
 			s.upgradeEventLoop(conn, r.RemoteAddr, r.Header, session)

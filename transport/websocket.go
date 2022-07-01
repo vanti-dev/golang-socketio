@@ -3,6 +3,7 @@ package transport
 import (
 	"crypto/tls"
 	"errors"
+	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -48,7 +49,7 @@ func (ws *WebsocketConnection) GetMessage() (string, error) {
 
 	msgType, reader, err := ws.socket.NextReader()
 	if err != nil {
-		logging.Log().Debug("WebsocketConnection.GetMessage() ws.socket.NextReader() err:", err)
+		logging.Log().Debug("WebsocketConnection.GetMessage() ws.socket.NextReader() err:", zap.Error(err))
 		return "", err
 	}
 
@@ -65,7 +66,7 @@ func (ws *WebsocketConnection) GetMessage() (string, error) {
 	}
 
 	text := string(data)
-	logging.Log().Debug("WebsocketConnection.GetMessage() text:", text)
+	logging.Log().Debug("WebsocketConnection.GetMessage() text:", zap.String("text", text))
 
 	// empty messages are not allowed
 	if len(text) == 0 {
@@ -81,7 +82,7 @@ func (t *WebsocketTransport) SetSid(string, Connection) {}
 
 // WriteMessage message m into a connection
 func (ws *WebsocketConnection) WriteMessage(m string) error {
-	logging.Log().Debug("WebsocketConnection.WriteMessage() fired with:", m)
+	logging.Log().Debug("WebsocketConnection.WriteMessage() fired with:", zap.String("m", m))
 	ws.socket.SetWriteDeadline(time.Now().Add(ws.transport.SendTimeout))
 
 	writer, err := ws.socket.NextWriter(websocket.TextMessage)

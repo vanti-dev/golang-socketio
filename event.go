@@ -2,6 +2,8 @@ package gosocketio
 
 import (
 	"encoding/json"
+	"fmt"
+	"go.uber.org/zap"
 	"reflect"
 	"sync"
 
@@ -75,17 +77,17 @@ func (e *event) callHandler(c *Channel, name string) {
 
 // processIncoming checks incoming message m on channel c
 func (e *event) processIncoming(c *Channel, m *protocol.Message) {
-	logging.Log().Debug("event.processIncoming() fired with:", m)
+	logging.Log().Debug("event.processIncoming() fired with:", zap.Any("m", m))
 	switch m.Type {
 	case protocol.MessageTypeEmit:
-		logging.Log().Debug("event.processIncoming() is finding handler for msg.Event:", m.EventName)
+		logging.Log().Debug("event.processIncoming() is finding handler for msg.Event:", zap.String("EventName", m.EventName))
 		f, ok := e.findHandler(m.EventName)
 		if !ok {
 			logging.Log().Debug("event.processIncoming(): handler not found")
 			return
 		}
 
-		logging.Log().Debug("event.processIncoming() found handler:", f)
+		logging.Log().Debug("event.processIncoming() found handler:", zap.Any("f", f))
 
 		if !f.hasArgs {
 			f.call(c, &struct{}{})
@@ -93,11 +95,11 @@ func (e *event) processIncoming(c *Channel, m *protocol.Message) {
 		}
 
 		data := f.arguments()
-		logging.Log().Debug("event.processIncoming(), f.arguments() returned:", data)
+		logging.Log().Debug("event.processIncoming(), f.arguments() returned:", zap.Any("data", data))
 
 		if err := json.Unmarshal([]byte(m.Args), &data); err != nil {
-			logging.Log().Infof("event.processIncoming() failed to json.Unmaeshal(). msg.Args: %s, data: %v, err: %v",
-				m.Args, data, err)
+			logging.Log().Info(fmt.Sprintf("event.processIncoming() failed to json.Unmaeshal(). msg.Args: %s, data: %v, err: %v",
+				m.Args, data, err))
 			return
 		}
 

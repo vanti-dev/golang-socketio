@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -33,18 +34,18 @@ func (polling *PollingClientConnection) GetMessage() (string, error) {
 
 	resp, err := polling.client.Get(polling.url)
 	if err != nil {
-		logging.Log().Debug("PollingConnection.GetMessage() error polling.client.Get():", err)
+		logging.Log().Warn("PollingConnection.GetMessage() error polling.client.Get():", zap.Error(err))
 		return "", err
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		logging.Log().Debug("PollingConnection.GetMessage() error ioutil.ReadAll():", err)
+		logging.Log().Warn("PollingConnection.GetMessage() error ioutil.ReadAll():", zap.Error(err))
 		return "", err
 	}
 
 	bodyString := string(bodyBytes)
-	logging.Log().Debug("PollingConnection.GetMessage() bodyString:", bodyString)
+	logging.Log().Debug("PollingConnection.GetMessage() ", zap.String("bodyString", bodyString))
 	index := strings.Index(bodyString, ":")
 
 	body := bodyString[index+1:]
@@ -54,18 +55,18 @@ func (polling *PollingClientConnection) GetMessage() (string, error) {
 // WriteMessage performs a POST request to send a message to server
 func (polling *PollingClientConnection) WriteMessage(m string) error {
 	mWrite := withLength(m)
-	logging.Log().Debug("PollingConnection.WriteMessage() fired, msgToWrite:", mWrite)
+	logging.Log().Debug("PollingConnection.WriteMessage() fired, msgToWrite:", zap.String("mWrite", mWrite))
 	mJSON := []byte(mWrite)
 
 	resp, err := polling.client.Post(polling.url, "application/json", bytes.NewBuffer(mJSON))
 	if err != nil {
-		logging.Log().Debug("PollingConnection.WriteMessage() error polling.client.Post():", err)
+		logging.Log().Debug("PollingConnection.WriteMessage() error polling.client.Post():", zap.Error(err))
 		return err
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		logging.Log().Debug("PollingConnection.WriteMessage() error ioutil.ReadAll():", err)
+		logging.Log().Debug("PollingConnection.WriteMessage() error ioutil.ReadAll():", zap.Error(err))
 		return err
 	}
 
@@ -124,19 +125,19 @@ func (t *PollingClientTransport) Connect(url string) (Connection, error) {
 
 	resp, err := polling.client.Get(polling.url)
 	if err != nil {
-		logging.Log().Debug("PollingConnection.Connect() error polling.client.Get() 1:", err)
+		logging.Log().Debug("PollingConnection.Connect() error polling.client.Get() 1:", zap.Error(err))
 		return nil, err
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		logging.Log().Debug("PollingConnection.Connect() error ioutil.ReadAll() 1:", err)
+		logging.Log().Debug("PollingConnection.Connect() error ioutil.ReadAll() 1:", zap.Error(err))
 		return nil, err
 	}
 
 	resp.Body.Close()
 	bodyString := string(bodyBytes)
-	logging.Log().Debug("PollingConnection.Connect() bodyString 1:", bodyString)
+	logging.Log().Debug("PollingConnection.Connect() bodyString 1:", zap.String("bodyString", bodyString))
 
 	body := bodyString[strings.Index(bodyString, ":")+1:]
 	if string(body[0]) != protocol.MessageOpen {
@@ -147,28 +148,28 @@ func (t *PollingClientTransport) Connect(url string) (Connection, error) {
 	var openSequence openSequence
 
 	if err := json.Unmarshal(bodyBytes2, &openSequence); err != nil {
-		logging.Log().Debug("PollingConnection.Connect() error json.Unmarshal() 1:", err)
+		logging.Log().Debug("PollingConnection.Connect() error json.Unmarshal() 1:", zap.Error(err))
 		return nil, err
 	}
 
 	polling.url += "&sid=" + openSequence.Sid
-	logging.Log().Debug("PollingConnection.Connect() polling.url 1:", polling.url)
+	logging.Log().Debug("PollingConnection.Connect() polling.url 1:", zap.String("url", polling.url))
 
 	resp, err = polling.client.Get(polling.url)
 	if err != nil {
-		logging.Log().Debug("PollingConnection.Connect() error plc.client.Get() 2:", err)
+		logging.Log().Debug("PollingConnection.Connect() error plc.client.Get() 2:", zap.Error(err))
 		return nil, err
 	}
 
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
-		logging.Log().Debug("PollingConnection.Connect() error ioutil.ReadAll() 2:", err)
+		logging.Log().Debug("PollingConnection.Connect() error ioutil.ReadAll() 2:", zap.Error(err))
 		return nil, err
 	}
 
 	resp.Body.Close()
 	bodyString = string(bodyBytes)
-	logging.Log().Debug("PollingConnection.Connect() bodyString 2:", bodyString)
+	logging.Log().Debug("PollingConnection.Connect() bodyString 2:", zap.String("bodyString", bodyString))
 	body = bodyString[strings.Index(bodyString, ":")+1:]
 
 	if body != protocol.MessageEmpty {

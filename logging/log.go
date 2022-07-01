@@ -1,28 +1,15 @@
 package logging
 
 import (
-	"os"
-
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
-var log *logrus.Logger
+var log *zap.Logger
 
 // Log returns the logger object
-func Log() *logrus.Logger { return log }
-
-// initLogger mainly for debug purposes
-func initLogger() {
-	logLevel, err := logrus.ParseLevel(os.Getenv("SIO_LL"))
-	if err != nil {
-		logLevel = logrus.WarnLevel
+func Log() *zap.Logger {
+	if log == nil {
+		log, _ = zap.NewDevelopmentConfig().Build()
 	}
-
-	log = &logrus.Logger{
-		Formatter: new(logrus.TextFormatter),
-		Out:       os.Stdout,
-		Level:     logLevel,
-	}
+	return log
 }
-
-func init() { initLogger() }

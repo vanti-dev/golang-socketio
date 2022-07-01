@@ -3,6 +3,8 @@ package gosocketio
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"go.uber.org/zap"
 	"net/http"
 	"sync"
 	"time"
@@ -116,7 +118,7 @@ func (c *Channel) inLoop(e *event) error {
 	for {
 		message, err := c.conn.GetMessage()
 		if err != nil {
-			logging.Log().Debugf("Channel.inLoop(), c.conn.GetMessage() err: %v, message: %s", err, message)
+			logging.Log().Debug(fmt.Sprintf("Channel.inLoop(), c.conn.GetMessage() err: %v, message: %s", err, message))
 			return c.close(e)
 		}
 
@@ -127,23 +129,23 @@ func (c *Channel) inLoop(e *event) error {
 
 		decodedMessage, err := protocol.Decode(message)
 		if err != nil {
-			logging.Log().Debugf("Channel.inLoop() decoding err: %v, message: %s", err, message)
+			logging.Log().Debug(fmt.Sprintf("Channel.inLoop() decoding err: %v, message: %s", err, message))
 			c.close(e)
 			return err
 		}
 
 		switch decodedMessage.Type {
 		case protocol.MessageTypeOpen:
-			logging.Log().Debugf("Channel.inLoop(), protocol.MessageTypeOpen, decodedMessage: %+v", decodedMessage)
+			logging.Log().Debug(fmt.Sprintf("Channel.inLoop(), protocol.MessageTypeOpen, decodedMessage: %+v", decodedMessage))
 			if err := json.Unmarshal([]byte(decodedMessage.Source[1:]), &c.connHeader); err != nil {
 				c.close(e)
 			}
 			e.callHandler(c, OnConnection)
 
 		case protocol.MessageTypePing:
-			logging.Log().Debugf("Channel.inLoop(), protocol.MessageTypePing, decodedMessage: %+v", decodedMessage)
+			logging.Log().Debug(fmt.Sprintf("Channel.inLoop(), protocol.MessageTypePing, decodedMessage: %+v", decodedMessage))
 			if decodedMessage.Source == protocol.MessagePingProbe {
-				logging.Log().Debugf("Channel.inLoop(), decodedMessage.Source: %s", decodedMessage.Source)
+				logging.Log().Debug(fmt.Sprintf("Channel.inLoop(), decodedMessage.Source: %s", decodedMessage.Source))
 				c.outC <- protocol.MessagePongProbe
 				c.upgradedC <- transport.UpgradedMessage
 			} else {
@@ -165,7 +167,7 @@ func (c *Channel) inLoop(e *event) error {
 func (c *Channel) outLoop(e *event) error {
 	for {
 		outBufferLen := len(c.outC)
-		logging.Log().Debug("Channel.outLoop(), outBufferLen:", outBufferLen)
+		logging.Log().Debug("Channel.outLoop(), outBufferLen:", zap.Int("outBufferLen", outBufferLen))
 		switch {
 		case outBufferLen >= queueBufferSize-1:
 			logging.Log().Debug("Channel.outLoop(), outBufferLen >= queueBufferSize-1")
@@ -187,7 +189,7 @@ func (c *Channel) outLoop(e *event) error {
 		}
 
 		if err := c.conn.WriteMessage(m); err != nil {
-			logging.Log().Debug("Channel.outLoop(), failed to c.conn.WriteMessage() with err:", err)
+			logging.Log().Warn("Channel.outLoop(), failed to c.conn.WriteMessage() with err:", zap.Error(err))
 			return c.close(e)
 		}
 	}
@@ -212,7 +214,7 @@ func (c *Channel) send(m *protocol.Message, payload interface{}) error {
 	// preventing encoding/json "index out of range" panic
 	defer func() {
 		if r := recover(); r != nil {
-			logging.Log().Warn("Channel.send(): recovered from panic:", r)
+			logging.Log().Warn("Channel.send(): recovered from panic:", zap.Any("r", r))
 		}
 	}()
 
