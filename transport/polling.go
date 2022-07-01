@@ -36,64 +36,19 @@ var (
 // withLength returns s as a message with length
 func withLength(m string) string { return fmt.Sprintf("%d:%s", len(m), m) }
 
+// setHeaders into w
+func setHeaders(w http.ResponseWriter) {
+	// We are going to return JSON no matter what:
+	w.Header().Set("Content-Type", "application/json")
+	// Don't cache response:
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // HTTP 1.1
+	w.Header().Set("Pragma", "no-cache")                                   // HTTP 1.0
+	w.Header().Set("Expires", "0")                                         // Proxies
+}
+
 // PollingTransportParams represents XHR polling transport params
 type PollingTransportParams struct {
 	Headers http.Header
-}
-
-// PollingConnection represents a XHR polling connection
-type PollingConnection struct {
-	Transport  *PollingTransport
-	eventsInC  chan string
-	eventsOutC chan string
-	errors     chan string
-	sessionID  string
-}
-
-// GetMessage waits for incoming message from the connection
-func (polling *PollingConnection) GetMessage() (string, error) {
-	select {
-	case <-time.After(polling.Transport.ReceiveTimeout):
-		logging.Log().Debug("PollingConnection.GetMessage() timed out")
-		return "", errGetMessageTimeout
-	case m := <-polling.eventsInC:
-		logging.Log().Debug("PollingConnection.GetMessage() received:", zap.String("m", m))
-		if m == protocol.MessageClose {
-			logging.Log().Debug("PollingConnection.GetMessage() received connection close")
-			return "", errReceivedConnectionClose
-		}
-		return m, nil
-	}
-}
-
-// WriteMessage to the connection
-func (polling *PollingConnection) WriteMessage(message string) error {
-	logging.Log().Debug("PollingConnection.WriteMessage() fired with:", zap.String("message", message))
-	polling.eventsOutC <- message
-	logging.Log().Debug("PollingConnection.WriteMessage() written to eventsOutC:", zap.String("message", message))
-	select {
-	case <-time.After(polling.Transport.SendTimeout):
-		return errWriteMessageTimeout
-	case errString := <-polling.errors:
-		if errString != noError {
-			logging.Log().Debug("PollingConnection.WriteMessage() failed to write with err:", zap.String("errString", errString))
-			return errors.New(errString)
-		}
-	}
-	return nil
-}
-
-// Close the polling connection and delete session
-func (polling *PollingConnection) Close() error {
-	logging.Log().Debug("PollingConnection.Close() fired for session:", zap.String("sessionId", polling.sessionID))
-	err := polling.WriteMessage(protocol.MessageBlank)
-	polling.Transport.sessions.Delete(polling.sessionID)
-	return err
-}
-
-// PingParams returns a connection ping params
-func (polling *PollingConnection) PingParams() (time.Duration, time.Duration) {
-	return polling.Transport.PingInterval, polling.Transport.PingTimeout
 }
 
 // sessions describes sessions needed for identifying polling connections with socket.io connections
@@ -134,6 +89,21 @@ type PollingTransport struct {
 
 	Headers  http.Header
 	sessions sessions
+}
+
+// DefaultPollingTransport returns PollingTransport with default params
+func DefaultPollingTransport() *PollingTransport {
+	return &PollingTransport{
+		PingInterval:   PlDefaultPingInterval,
+		PingTimeout:    PlDefaultPingTimeout,
+		ReceiveTimeout: PlDefaultReceiveTimeout,
+		SendTimeout:    PlDefaultSendTimeout,
+		sessions: sessions{
+			Mutex: sync.Mutex{},
+			m:     map[string]*PollingConnection{},
+		},
+		Headers: nil,
+	}
 }
 
 // Connect for the polling transport is a placeholder
@@ -192,19 +162,59 @@ func (t *PollingTransport) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// DefaultPollingTransport returns PollingTransport with default params
-func DefaultPollingTransport() *PollingTransport {
-	return &PollingTransport{
-		PingInterval:   PlDefaultPingInterval,
-		PingTimeout:    PlDefaultPingTimeout,
-		ReceiveTimeout: PlDefaultReceiveTimeout,
-		SendTimeout:    PlDefaultSendTimeout,
-		sessions: sessions{
-			Mutex: sync.Mutex{},
-			m:     map[string]*PollingConnection{},
-		},
-		Headers: nil,
+// PollingConnection represents a XHR polling connection
+type PollingConnection struct {
+	Transport  *PollingTransport
+	eventsInC  chan string
+	eventsOutC chan string
+	errors     chan string
+	sessionID  string
+}
+
+// GetMessage waits for incoming message from the connection
+func (polling *PollingConnection) GetMessage() (string, error) {
+	select {
+	case <-time.After(polling.Transport.ReceiveTimeout):
+		logging.Log().Debug("PollingConnection.GetMessage() timed out")
+		return "", errGetMessageTimeout
+	case m := <-polling.eventsInC:
+		logging.Log().Debug("PollingConnection.GetMessage() received:", zap.String("m", m))
+		if m == protocol.MessageClose {
+			logging.Log().Debug("PollingConnection.GetMessage() received connection close")
+			return "", errReceivedConnectionClose
+		}
+		return m, nil
 	}
+}
+
+// WriteMessage to the connection
+func (polling *PollingConnection) WriteMessage(message string) error {
+	logging.Log().Debug("PollingConnection.WriteMessage() fired with:", zap.String("message", message))
+	polling.eventsOutC <- message
+	logging.Log().Debug("PollingConnection.WriteMessage() written to eventsOutC:", zap.String("message", message))
+	select {
+	case <-time.After(polling.Transport.SendTimeout):
+		return errWriteMessageTimeout
+	case errString := <-polling.errors:
+		if errString != noError {
+			logging.Log().Debug("PollingConnection.WriteMessage() failed to write with err:", zap.String("errString", errString))
+			return errors.New(errString)
+		}
+	}
+	return nil
+}
+
+// Close the polling connection and delete session
+func (polling *PollingConnection) Close() error {
+	logging.Log().Debug("PollingConnection.Close() fired for session:", zap.String("sessionId", polling.sessionID))
+	err := polling.WriteMessage(protocol.MessageBlank)
+	polling.Transport.sessions.Delete(polling.sessionID)
+	return err
+}
+
+// PingParams returns a connection ping params
+func (polling *PollingConnection) PingParams() (time.Duration, time.Duration) {
+	return polling.Transport.PingInterval, polling.Transport.PingTimeout
 }
 
 // PollingWriter for writing polling answer
@@ -254,14 +264,4 @@ func (polling *PollingConnection) PollingWriter(w http.ResponseWriter, r *http.R
 			polling.errors <- noError
 		}
 	}
-}
-
-// setHeaders into w
-func setHeaders(w http.ResponseWriter) {
-	// We are going to return JSON no matter what:
-	w.Header().Set("Content-Type", "application/json")
-	// Don't cache response:
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // HTTP 1.1
-	w.Header().Set("Pragma", "no-cache")                                   // HTTP 1.0
-	w.Header().Set("Expires", "0")                                         // Proxies
 }
