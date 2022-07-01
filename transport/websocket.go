@@ -36,78 +36,6 @@ var (
 	errHttpUpgradeFailed = errors.New("http upgrade failed")
 )
 
-// WebsocketConnection represents websocket connection
-type WebsocketConnection struct {
-	socket    *websocket.Conn
-	transport *WebsocketTransport
-}
-
-// GetMessage from the connection
-func (ws *WebsocketConnection) GetMessage() (string, error) {
-	logging.Log().Debug("WebsocketConnection.GetMessage() fired")
-	ws.socket.SetReadDeadline(time.Now().Add(ws.transport.ReceiveTimeout))
-
-	msgType, reader, err := ws.socket.NextReader()
-	if err != nil {
-		logging.Log().Debug("WebsocketConnection.GetMessage() ws.socket.NextReader() err:", zap.Error(err))
-		return "", err
-	}
-
-	// supports only text messages exchange
-	if msgType != websocket.TextMessage {
-		logging.Log().Debug("WebsocketConnection.GetMessage() returns errBinaryMessage")
-		return "", errBinaryMessage
-	}
-
-	data, err := ioutil.ReadAll(reader)
-	if err != nil {
-		logging.Log().Debug("WebsocketConnection.GetMessage() returns errBadBuffer")
-		return "", errBadBuffer
-	}
-
-	text := string(data)
-	logging.Log().Debug("WebsocketConnection.GetMessage() text:", zap.String("text", text))
-
-	// empty messages are not allowed
-	if len(text) == 0 {
-		logging.Log().Debug("WebsocketConnection.GetMessage() returns errPacketWrong")
-		return "", errPacketWrong
-	}
-
-	return text, nil
-}
-
-// SetSid does nothing for the websocket transport, it's used only when transport changes (from)
-func (t *WebsocketTransport) SetSid(string, Connection) {}
-
-// WriteMessage message m into a connection
-func (ws *WebsocketConnection) WriteMessage(m string) error {
-	logging.Log().Debug("WebsocketConnection.WriteMessage() fired with:", zap.String("m", m))
-	ws.socket.SetWriteDeadline(time.Now().Add(ws.transport.SendTimeout))
-
-	writer, err := ws.socket.NextWriter(websocket.TextMessage)
-	if err != nil {
-		return err
-	}
-
-	if _, err := writer.Write([]byte(m)); err != nil {
-		return err
-	}
-
-	return writer.Close()
-}
-
-// Close the connection
-func (ws *WebsocketConnection) Close() error {
-	logging.Log().Debug("WebsocketConnection.Close() fired")
-	return ws.socket.Close()
-}
-
-// PingParams returns ping params
-func (ws *WebsocketConnection) PingParams() (time.Duration, time.Duration) {
-	return ws.transport.PingInterval, ws.transport.PingTimeout
-}
-
 // WebsocketTransport implements websocket transport
 type WebsocketTransport struct {
 	PingInterval   time.Duration
@@ -120,6 +48,26 @@ type WebsocketTransport struct {
 	TLSClientConfig *tls.Config
 
 	CheckOriginHandler func(r *http.Request) bool
+}
+
+// DefaultWebsocketTransport returns websocket connection with default params
+func DefaultWebsocketTransport() *WebsocketTransport {
+	return &WebsocketTransport{
+		PingInterval:   wsDefaultPingInterval,
+		PingTimeout:    wsDefaultPingTimeout,
+		ReceiveTimeout: wsDefaultReceiveTimeout,
+		SendTimeout:    wsDefaultSendTimeout,
+		BufferSize:     wsDefaultBufferSize,
+	}
+}
+
+// NewWebsocketTransport returns websocket transport with given params
+func NewWebsocketTransport(params WebsocketTransportParams, originHandler func(r *http.Request) bool) *WebsocketTransport {
+	tr := DefaultWebsocketTransport()
+	tr.Headers = params.Headers
+	tr.TLSClientConfig = params.TLSClientConfig
+	tr.CheckOriginHandler = originHandler
+	return tr
 }
 
 // Connect to the given url
@@ -161,22 +109,74 @@ func (t *WebsocketTransport) HandleConnection(w http.ResponseWriter, r *http.Req
 // Serve does nothing here. Websocket connection does not require any additional processing
 func (t *WebsocketTransport) Serve(w http.ResponseWriter, r *http.Request) {}
 
-// DefaultWebsocketTransport returns websocket connection with default params
-func DefaultWebsocketTransport() *WebsocketTransport {
-	return &WebsocketTransport{
-		PingInterval:   wsDefaultPingInterval,
-		PingTimeout:    wsDefaultPingTimeout,
-		ReceiveTimeout: wsDefaultReceiveTimeout,
-		SendTimeout:    wsDefaultSendTimeout,
-		BufferSize:     wsDefaultBufferSize,
-	}
+// SetSid does nothing for the websocket transport, it's used only when transport changes (from)
+func (t *WebsocketTransport) SetSid(string, Connection) {}
+
+// WebsocketConnection represents websocket connection
+type WebsocketConnection struct {
+	socket    *websocket.Conn
+	transport *WebsocketTransport
 }
 
-// NewWebsocketTransport returns websocket transport with given params
-func NewWebsocketTransport(params WebsocketTransportParams, originHandler func(r *http.Request) bool) *WebsocketTransport {
-	tr := DefaultWebsocketTransport()
-	tr.Headers = params.Headers
-	tr.TLSClientConfig = params.TLSClientConfig
-	tr.CheckOriginHandler = originHandler
-	return tr
+// GetMessage from the connection
+func (ws *WebsocketConnection) GetMessage() (string, error) {
+	logging.Log().Debug("WebsocketConnection.GetMessage() fired")
+	ws.socket.SetReadDeadline(time.Now().Add(ws.transport.ReceiveTimeout))
+
+	msgType, reader, err := ws.socket.NextReader()
+	if err != nil {
+		logging.Log().Debug("WebsocketConnection.GetMessage() ws.socket.NextReader() err:", zap.Error(err))
+		return "", err
+	}
+
+	// supports only text messages exchange
+	if msgType != websocket.TextMessage {
+		logging.Log().Debug("WebsocketConnection.GetMessage() returns errBinaryMessage")
+		return "", errBinaryMessage
+	}
+
+	data, err := ioutil.ReadAll(reader)
+	if err != nil {
+		logging.Log().Debug("WebsocketConnection.GetMessage() returns errBadBuffer")
+		return "", errBadBuffer
+	}
+
+	text := string(data)
+	logging.Log().Debug("WebsocketConnection.GetMessage() text:", zap.String("text", text))
+
+	// empty messages are not allowed
+	if len(text) == 0 {
+		logging.Log().Debug("WebsocketConnection.GetMessage() returns errPacketWrong")
+		return "", errPacketWrong
+	}
+
+	return text, nil
+}
+
+// WriteMessage message m into a connection
+func (ws *WebsocketConnection) WriteMessage(m string) error {
+	logging.Log().Debug("WebsocketConnection.WriteMessage() fired with:", zap.String("m", m))
+	ws.socket.SetWriteDeadline(time.Now().Add(ws.transport.SendTimeout))
+
+	writer, err := ws.socket.NextWriter(websocket.TextMessage)
+	if err != nil {
+		return err
+	}
+
+	if _, err := writer.Write([]byte(m)); err != nil {
+		return err
+	}
+
+	return writer.Close()
+}
+
+// Close the connection
+func (ws *WebsocketConnection) Close() error {
+	logging.Log().Debug("WebsocketConnection.Close() fired")
+	return ws.socket.Close()
+}
+
+// PingParams returns ping params
+func (ws *WebsocketConnection) PingParams() (time.Duration, time.Duration) {
+	return ws.transport.PingInterval, ws.transport.PingTimeout
 }
