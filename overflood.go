@@ -1,4 +1,4 @@
-package gosocketio
+package socketio
 
 import (
 	"sync"

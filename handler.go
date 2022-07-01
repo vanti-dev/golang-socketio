@@ -1,4 +1,4 @@
-package gosocketio
+package socketio
 
 import (
 	"errors"
@@ -19,7 +19,10 @@ var (
 	ErrorHandlerWrongResult = errors.New("f should return no more than one value")
 )
 
-// newHandler parses function f (event handler) using reflection, and stores it's representation
+// newHandler parses function f (event handler) using reflection, and stores its representation
+//
+// f should be of the form `func (c *Channel, [body &interface{}]) [&interface{}]`. The body param and return type are
+// optional, and are used to convert to/from json for sending over the websocket
 func newHandler(f interface{}) (*handler, error) {
 	fVal := reflect.ValueOf(f)
 	if fVal.Kind() != reflect.Func {

@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/vanti-dev/golang-socketio"
 	"log"
 	"time"
 
-	"github.com/vanti-dev/golang-socketio"
 	"github.com/vanti-dev/golang-socketio/examples/model"
 	"github.com/vanti-dev/golang-socketio/transport"
 )
@@ -22,8 +22,8 @@ const defaultTimeout = time.Second * 30
 
 const serverPort = 3811
 
-func onConnectionHandler(c *gosocketio.Channel)    { log.Printf("Connected %s\n", c.Id()) }
-func onDisconnectionHandler(c *gosocketio.Channel) { log.Printf("Disconnected %s\n", c.Id()) }
+func onConnectionHandler(c *socketio.Channel)    { log.Printf("Connected %s\n", c.Id()) }
+func onDisconnectionHandler(c *socketio.Channel) { log.Printf("Disconnected %s\n", c.Id()) }
 
 // SomeEventPayload represents a payload for event someEvent
 type SomeEventPayload struct {
@@ -33,7 +33,7 @@ type SomeEventPayload struct {
 
 var sendResultC = make(chan SomeEventPayload)
 
-func onSomeEventHandler(c *gosocketio.Channel, data interface{}) {
+func onSomeEventHandler(c *socketio.Channel, data interface{}) {
 	log.Printf("--- Client channel %s received someEvent with data: %v\n", c.Id(), data)
 	j, err := json.Marshal(data)
 	if err != nil {
@@ -49,18 +49,18 @@ func onSomeEventHandler(c *gosocketio.Channel, data interface{}) {
 }
 
 func main() {
-	client, err := gosocketio.Dial(
-		gosocketio.AddrWebsocket("localhost", serverPort, false),
+	client, err := socketio.Dial(
+		socketio.AddrWebsocket("localhost", serverPort, false),
 		transport.DefaultWebsocketTransport(),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := client.On(gosocketio.OnConnection, onConnectionHandler); err != nil {
+	if err := client.On(socketio.OnConnection, onConnectionHandler); err != nil {
 		log.Fatal(err)
 	}
-	if err := client.On(gosocketio.OnDisconnection, onDisconnectionHandler); err != nil {
+	if err := client.On(socketio.OnDisconnection, onDisconnectionHandler); err != nil {
 		log.Fatal(err)
 	}
 

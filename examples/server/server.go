@@ -25,16 +25,16 @@ const (
 	eventLeave = "leave"
 )
 
-func onConnectionHandler(c *gosocketio.Channel)    { log.Printf("Connected %s\n", c.Id()) }
-func onDisconnectionHandler(c *gosocketio.Channel) { log.Printf("Disconnected %s\n", c.Id()) }
-func onJoinHandler(c *gosocketio.Channel, roomName string) string {
+func onConnectionHandler(c *socketio.Channel)    { log.Printf("Connected %s\n", c.Id()) }
+func onDisconnectionHandler(c *socketio.Channel) { log.Printf("Disconnected %s\n", c.Id()) }
+func onJoinHandler(c *socketio.Channel, roomName string) string {
 	log.Printf("Join %s to room %s\n", c.Id(), roomName)
 	if err := c.Join(roomName); err != nil {
 		return err.Error()
 	}
 	return OK
 }
-func onSendHandler(c *gosocketio.Channel, param interface{}) interface{} {
+func onSendHandler(c *socketio.Channel, param interface{}) interface{} {
 	log.Printf("Received SEND on %s with ", c.Id())
 	j, err := json.Marshal(param)
 	if err != nil {
@@ -59,7 +59,7 @@ func onSendHandler(c *gosocketio.Channel, param interface{}) interface{} {
 	c.BroadcastTo(obj.BroadcastRoomName, obj.EventName, obj.Payload)
 	return OK
 }
-func onLeaveHandler(c *gosocketio.Channel, roomName string) string {
+func onLeaveHandler(c *socketio.Channel, roomName string) string {
 	log.Printf("Leave %s from room %s\n", c.Id(), roomName)
 	if err := c.Leave(roomName); err != nil {
 		return err.Error()
@@ -82,15 +82,15 @@ func main() {
 
 	log.Println("assetsDir:", assetsDir)
 
-	server := gosocketio.NewServer(
+	server := socketio.NewServer(
 		transport.NewWebsocketTransport(transport.WebsocketTransportParams{}, func(r *http.Request) bool {
 			return true
 		}),
 		transport.DefaultPollingTransport())
-	if err := server.On(gosocketio.OnConnection, onConnectionHandler); err != nil {
+	if err := server.On(socketio.OnConnection, onConnectionHandler); err != nil {
 		log.Fatal(err)
 	}
-	if err := server.On(gosocketio.OnDisconnection, onDisconnectionHandler); err != nil {
+	if err := server.On(socketio.OnDisconnection, onDisconnectionHandler); err != nil {
 		log.Fatal(err)
 	}
 	if err := server.On(eventJoin, onJoinHandler); err != nil {
