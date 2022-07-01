@@ -39,11 +39,16 @@ type Server struct {
 	polling   *transport.PollingTransport
 }
 
-// NewServer creates new socket.io server
-func NewServer() *Server {
+// DefaultServer creates a new socket.io server with default params
+func DefaultServer() *Server {
+	return NewServer(transport.DefaultWebsocketTransport(), transport.DefaultPollingTransport())
+}
+
+// NewServer create a new socket.io server with custom transports
+func NewServer(wsTransport *transport.WebsocketTransport, pollingTransport *transport.PollingTransport) *Server {
 	s := &Server{
-		websocket: transport.DefaultWebsocketTransport(),
-		polling:   transport.DefaultPollingTransport(),
+		websocket: wsTransport,
+		polling:   pollingTransport,
 		channels:  make(map[string]map[*Channel]struct{}),
 		rooms:     make(map[*Channel]map[string]struct{}),
 		sids:      make(map[string]*Channel),

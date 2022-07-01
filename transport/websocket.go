@@ -118,6 +118,8 @@ type WebsocketTransport struct {
 	BufferSize      int
 	Headers         http.Header
 	TLSClientConfig *tls.Config
+
+	CheckOriginHandler func(r *http.Request) bool
 }
 
 // Connect to the given url
@@ -132,16 +134,23 @@ func (t *WebsocketTransport) Connect(url string) (Connection, error) {
 
 // HandleConnection
 func (t *WebsocketTransport) HandleConnection(w http.ResponseWriter, r *http.Request) (Connection, error) {
+	logging.Log().Debug("HandleConnection", zap.Any("r.Method", r.Method))
 	if r.Method != http.MethodGet {
 		http.Error(w, upgradeFailed+errMethodNotAllowed.Error(), http.StatusServiceUnavailable)
 		return nil, errMethodNotAllowed
 	}
 
-	socket, err := (&websocket.Upgrader{
+	u := &websocket.Upgrader{
 		ReadBufferSize:  t.BufferSize,
 		WriteBufferSize: t.BufferSize,
-	}).Upgrade(w, r, nil)
+	}
+	if t.CheckOriginHandler != nil {
+		u.CheckOrigin = t.CheckOriginHandler
+	}
+
+	socket, err := u.Upgrade(w, r, nil)
 	if err != nil {
+		logging.Log().Warn("couldn't upgrade", zap.Error(err))
 		http.Error(w, upgradeFailed+err.Error(), http.StatusServiceUnavailable)
 		return nil, errHttpUpgradeFailed
 	}
@@ -164,9 +173,10 @@ func DefaultWebsocketTransport() *WebsocketTransport {
 }
 
 // NewWebsocketTransport returns websocket transport with given params
-func NewWebsocketTransport(params WebsocketTransportParams) *WebsocketTransport {
+func NewWebsocketTransport(params WebsocketTransportParams, originHandler func(r *http.Request) bool) *WebsocketTransport {
 	tr := DefaultWebsocketTransport()
 	tr.Headers = params.Headers
 	tr.TLSClientConfig = params.TLSClientConfig
+	tr.CheckOriginHandler = originHandler
 	return tr
 }

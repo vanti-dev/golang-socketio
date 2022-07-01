@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/vanti-dev/golang-socketio/transport"
 	"log"
 	"net/http"
 	"os"
@@ -81,7 +82,11 @@ func main() {
 
 	log.Println("assetsDir:", assetsDir)
 
-	server := gosocketio.NewServer()
+	server := gosocketio.NewServer(
+		transport.NewWebsocketTransport(transport.WebsocketTransportParams{}, func(r *http.Request) bool {
+			return true
+		}),
+		transport.DefaultPollingTransport())
 	if err := server.On(gosocketio.OnConnection, onConnectionHandler); err != nil {
 		log.Fatal(err)
 	}
